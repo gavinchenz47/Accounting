@@ -167,10 +167,9 @@ class TestManualEntry:
         name_input = page.locator("input[aria-label='Employee Name']")
         name_input.fill("Test Employee")
 
-        # Fill in gross pay
+        # Fill in gross pay (text input)
         gross_input = page.locator("input[aria-label='Gross Pay ($)']")
-        gross_input.fill("")
-        gross_input.type("5000")
+        gross_input.fill("5000")
 
         # Click calculate
         calc_button = page.get_by_role("button", name="Calculate Payroll")
@@ -197,11 +196,11 @@ class TestManualEntry:
         # Should show error
         expect(page.locator("text=Name is required")).to_be_visible(timeout=5000)
 
-    def test_manual_entry_validation_zero_gross(self, page):
-        """Should show error when gross pay is 0."""
+    def test_manual_entry_validation_empty_gross(self, page):
+        """Should show error when gross pay is empty."""
         # Manual entry is the default tab, no switching needed
 
-        # Fill name, leave gross at 0
+        # Fill name, leave gross empty
         name_input = page.locator("input[aria-label='Employee Name']")
         name_input.fill("Test Employee")
 
@@ -210,7 +209,7 @@ class TestManualEntry:
         calc_button.click()
         page.wait_for_timeout(2000)
 
-        expect(page.locator("text=Gross Pay must be greater than 0")).to_be_visible(timeout=5000)
+        expect(page.locator("text=Gross Pay is required")).to_be_visible(timeout=5000)
 
     def test_remove_employee_button(self, page):
         """Remove Last button should remove an employee row."""

@@ -383,33 +383,85 @@ def main():
                 pp = st.selectbox("Pay Frequency", options=list(pay_period_options.keys()), key=f"pp_{i}")
             c3, c4, c5 = st.columns(3)
             with c3:
-                gross = st.number_input("Gross Pay ($)", min_value=0.0, step=100.0, format="%.2f", key=f"gross_{i}",
-                                        help="This period's gross salary before deductions")
+                gross_str = st.text_input("Gross Pay ($)", key=f"gross_{i}", placeholder="e.g. 5000.00",
+                                          help="This period's gross salary before deductions")
             with c4:
-                ytd_cpp = st.number_input(f"YTD CPP (max ${CPP_MAX:,.2f})", min_value=0.0, max_value=CPP_MAX,
-                                          step=10.0, format="%.2f", key=f"ytd_cpp_{i}",
-                                          help="Total CPP already deducted this year from prior pay periods")
+                ytd_cpp_str = st.text_input(f"YTD CPP (max ${CPP_MAX:,.2f})", key=f"ytd_cpp_{i}", placeholder="0.00",
+                                            help="Total CPP already deducted this year from prior pay periods")
             with c5:
-                ytd_ei = st.number_input(f"YTD EI (max ${EI_MAX:,.2f})", min_value=0.0, max_value=EI_MAX,
-                                         step=10.0, format="%.2f", key=f"ytd_ei_{i}",
-                                         help="Total EI already deducted this year from prior pay periods")
-            manual_data.append({'name': name, 'gross': gross, 'ytd_cpp': ytd_cpp, 'ytd_ei': ytd_ei, 'pp_label': pp})
+                ytd_ei_str = st.text_input(f"YTD EI (max ${EI_MAX:,.2f})", key=f"ytd_ei_{i}", placeholder="0.00",
+                                           help="Total EI already deducted this year from prior pay periods")
+            manual_data.append({'name': name, 'gross_str': gross_str, 'ytd_cpp_str': ytd_cpp_str, 'ytd_ei_str': ytd_ei_str, 'pp_label': pp})
 
         st.markdown("---")
         if st.button("🧮 Calculate Payroll", type="primary", use_container_width=True, key="manual_calc"):
             valid = True
+            parsed = []
             for i, d in enumerate(manual_data):
                 if not d['name'].strip():
                     st.error(f"❌ Employee {i + 1}: Name is required.")
                     valid = False
-                if d['gross'] <= 0:
-                    st.error(f"❌ Employee {i + 1}: Gross Pay must be greater than 0.")
+
+                # Parse gross pay
+                gross_raw = d['gross_str'].strip().replace(',', '').replace('$', '')
+                if not gross_raw:
+                    st.error(f"❌ Employee {i + 1}: Gross Pay is required.")
                     valid = False
+                    gross = 0.0
+                else:
+                    try:
+                        gross = float(gross_raw)
+                        if gross <= 0:
+                            st.error(f"❌ Employee {i + 1}: Gross Pay must be greater than 0.")
+                            valid = False
+                    except ValueError:
+                        st.error(f"❌ Employee {i + 1}: Gross Pay must be a number.")
+                        valid = False
+                        gross = 0.0
+
+                # Parse YTD CPP
+                cpp_raw = d['ytd_cpp_str'].strip().replace(',', '').replace('$', '')
+                if not cpp_raw:
+                    ytd_cpp = 0.0
+                else:
+                    try:
+                        ytd_cpp = float(cpp_raw)
+                        if ytd_cpp < 0:
+                            st.error(f"❌ Employee {i + 1}: YTD CPP cannot be negative.")
+                            valid = False
+                        elif ytd_cpp > CPP_MAX:
+                            st.error(f"❌ Employee {i + 1}: YTD CPP (${ytd_cpp:,.2f}) exceeds maximum of ${CPP_MAX:,.2f}.")
+                            valid = False
+                    except ValueError:
+                        st.error(f"❌ Employee {i + 1}: YTD CPP must be a number.")
+                        valid = False
+                        ytd_cpp = 0.0
+
+                # Parse YTD EI
+                ei_raw = d['ytd_ei_str'].strip().replace(',', '').replace('$', '')
+                if not ei_raw:
+                    ytd_ei = 0.0
+                else:
+                    try:
+                        ytd_ei = float(ei_raw)
+                        if ytd_ei < 0:
+                            st.error(f"❌ Employee {i + 1}: YTD EI cannot be negative.")
+                            valid = False
+                        elif ytd_ei > EI_MAX:
+                            st.error(f"❌ Employee {i + 1}: YTD EI (${ytd_ei:,.2f}) exceeds maximum of ${EI_MAX:,.2f}.")
+                            valid = False
+                    except ValueError:
+                        st.error(f"❌ Employee {i + 1}: YTD EI must be a number.")
+                        valid = False
+                        ytd_ei = 0.0
+
+                parsed.append({'name': d['name'].strip(), 'gross': gross, 'ytd_cpp': ytd_cpp, 'ytd_ei': ytd_ei, 'pp_label': d['pp_label']})
+
             if valid:
                 employees = []
-                for d in manual_data:
+                for d in parsed:
                     employees.append({
-                        'name': d['name'].strip(),
+                        'name': d['name'],
                         'gross_pay': d['gross'],
                         'ytd_cpp': d['ytd_cpp'],
                         'ytd_ei': d['ytd_ei'],
