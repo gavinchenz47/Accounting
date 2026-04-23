@@ -3,6 +3,6 @@ __pycache__/
 *.pyc
 .DS_Store
 *.xlsx
-.streamlit/
+.streamlit/secrets.toml
 .pytest_cache/
 test-results/

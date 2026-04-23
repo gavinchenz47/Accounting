@@ -12,6 +12,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Hide Streamlit branding and dev UI
+st.markdown("""
+<style>
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+[data-testid="stToolbar"] {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
 # Main App
 def main():
     # Sidebar
