@@ -267,7 +267,7 @@ def main():
         st.title("💼 CRA Payroll")
         st.markdown("---")
         st.markdown("### About")
-        st.info("Automates CRA payroll calculations. Upload your employee CSV and get T4-ready Excel reports instantly.")
+        st.info("Automates CRA payroll calculations. Upload a CSV or enter employee data manually to get T4-ready Excel reports.")
         
         st.markdown("### 2026 CRA Rates")
         st.text(f"CPP: 5.95%")
@@ -284,90 +284,162 @@ def main():
     st.markdown("**Automated payroll calculations matching the CRA website - Get T4-ready Excel in seconds**")
     st.markdown("---")
     
-    # Instructions
-    with st.expander("📋 How to Use", expanded=False):
-        st.markdown("""
-        1. **Prepare CSV file** with columns: `Employee Name, Gross Pay, YTD CPP, YTD EI, Pay Periods`
-        2. **Upload CSV** below
-        3. **Select pay period** 
-        4. **Download Excel** with complete payroll calculations
-        
-        **YTD (Year-to-Date) Tips:**
-        - First month of year: YTD CPP = 0, YTD EI = 0
-        - Subsequent months: Use YTD values from previous month's output
-        """)
-    
-    # File Upload
-    st.subheader("📤 Upload Employee Data")
-    uploaded_file = st.file_uploader(
-        "Choose CSV file",
-        type=['csv'],
-        help="CSV must have columns: Employee Name, Gross Pay, YTD CPP, YTD EI, Pay Periods"
+    # Pay period (shared across both tabs)
+    pay_period = st.text_input(
+        "Pay Period",
+        value=datetime.now().strftime("%B %Y"),
+        help="e.g., January 2026"
     )
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        pay_period = st.text_input(
-            "Pay Period",
-            value=datetime.now().strftime("%B %Y"),
-            help="e.g., January 2026"
+
+    # Input tabs
+    tab_csv, tab_manual = st.tabs(["📤 Upload CSV", "✏️ Manual Entry"])
+
+    employees = None
+
+    with tab_csv:
+        with st.expander("📋 CSV Format", expanded=False):
+            st.markdown("""
+            CSV must have columns: `Employee Name, Gross Pay, YTD CPP, YTD EI, Pay Periods`
+
+            **YTD (Year-to-Date) Tips:**
+            - First month of year: YTD CPP = 0, YTD EI = 0
+            - Subsequent months: Use YTD values from previous month's output
+            """)
+
+        uploaded_file = st.file_uploader(
+            "Choose CSV file",
+            type=['csv'],
+            help="CSV must have columns: Employee Name, Gross Pay, YTD CPP, YTD EI, Pay Periods"
         )
-    
-    with col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        calculate_button = st.button("🧮 Calculate Payroll", type="primary", use_container_width=True)
-    
-    # Process
-    if uploaded_file and calculate_button:
+
+        if uploaded_file and st.button("🧮 Calculate Payroll", type="primary", use_container_width=True, key="csv_calc"):
+            try:
+                df = pd.read_csv(uploaded_file)
+                required_cols = ['Employee Name', 'Gross Pay', 'YTD CPP', 'YTD EI', 'Pay Periods']
+                missing = [col for col in required_cols if col not in df.columns]
+                if missing:
+                    st.error(f"❌ Missing columns: {', '.join(missing)}")
+                else:
+                    employees = []
+                    has_errors = False
+                    for idx, row in df.iterrows():
+                        ytd_cpp = float(row['YTD CPP'])
+                        ytd_ei = float(row['YTD EI'])
+                        gross = float(str(row['Gross Pay']).replace(',', '').replace('$', ''))
+                        name = str(row['Employee Name']).strip()
+                        if ytd_cpp > 4230.45:
+                            st.error(f"❌ {name}: YTD CPP (${ytd_cpp:,.2f}) exceeds 2026 maximum of $4,230.45")
+                            has_errors = True
+                        if ytd_ei > 1123.07:
+                            st.error(f"❌ {name}: YTD EI (${ytd_ei:,.2f}) exceeds 2026 maximum of $1,123.07")
+                            has_errors = True
+                        if gross <= 0:
+                            st.error(f"❌ {name}: Gross Pay must be greater than 0.")
+                            has_errors = True
+                        employees.append({
+                            'name': name,
+                            'gross_pay': gross,
+                            'ytd_cpp': ytd_cpp,
+                            'ytd_ei': ytd_ei,
+                            'pay_periods': int(row['Pay Periods'])
+                        })
+                    if has_errors:
+                        employees = None
+            except Exception as e:
+                st.error(f"❌ Error reading file: {str(e)}")
+                st.info("Please check your CSV format matches the template.")
+
+    with tab_manual:
+        st.markdown("Enter employee data directly. Use **+ Add Employee** to add more rows (up to 10).")
+        st.caption("YTD = Year-to-Date. First pay period of the year? Leave YTD fields at 0.")
+
+        CPP_MAX = 4230.45
+        EI_MAX = 1123.07
+
+        if 'num_employees' not in st.session_state:
+            st.session_state.num_employees = 1
+
+        col_add, col_remove = st.columns(2)
+        with col_add:
+            if st.button("+ Add Employee", use_container_width=True):
+                st.session_state.num_employees = min(st.session_state.num_employees + 1, 10)
+                st.rerun()
+        with col_remove:
+            if st.session_state.num_employees > 1:
+                if st.button("- Remove Last", use_container_width=True):
+                    st.session_state.num_employees -= 1
+                    st.rerun()
+
+        pay_period_options = {"Monthly (12)": 12, "Semi-Monthly (24)": 24, "Bi-Weekly (26)": 26, "Weekly (52)": 52}
+
+        manual_data = []
+        for i in range(st.session_state.num_employees):
+            st.markdown(f"---")
+            st.markdown(f"**Employee {i + 1}**")
+            c1, c2 = st.columns(2)
+            with c1:
+                name = st.text_input("Employee Name", key=f"name_{i}", placeholder="e.g. John Smith")
+            with c2:
+                pp = st.selectbox("Pay Frequency", options=list(pay_period_options.keys()), key=f"pp_{i}")
+            c3, c4, c5 = st.columns(3)
+            with c3:
+                gross = st.number_input("Gross Pay ($)", min_value=0.0, step=100.0, format="%.2f", key=f"gross_{i}",
+                                        help="This period's gross salary before deductions")
+            with c4:
+                ytd_cpp = st.number_input(f"YTD CPP (max ${CPP_MAX:,.2f})", min_value=0.0, max_value=CPP_MAX,
+                                          step=10.0, format="%.2f", key=f"ytd_cpp_{i}",
+                                          help="Total CPP already deducted this year from prior pay periods")
+            with c5:
+                ytd_ei = st.number_input(f"YTD EI (max ${EI_MAX:,.2f})", min_value=0.0, max_value=EI_MAX,
+                                         step=10.0, format="%.2f", key=f"ytd_ei_{i}",
+                                         help="Total EI already deducted this year from prior pay periods")
+            manual_data.append({'name': name, 'gross': gross, 'ytd_cpp': ytd_cpp, 'ytd_ei': ytd_ei, 'pp_label': pp})
+
+        st.markdown("---")
+        if st.button("🧮 Calculate Payroll", type="primary", use_container_width=True, key="manual_calc"):
+            valid = True
+            for i, d in enumerate(manual_data):
+                if not d['name'].strip():
+                    st.error(f"❌ Employee {i + 1}: Name is required.")
+                    valid = False
+                if d['gross'] <= 0:
+                    st.error(f"❌ Employee {i + 1}: Gross Pay must be greater than 0.")
+                    valid = False
+            if valid:
+                employees = []
+                for d in manual_data:
+                    employees.append({
+                        'name': d['name'].strip(),
+                        'gross_pay': d['gross'],
+                        'ytd_cpp': d['ytd_cpp'],
+                        'ytd_ei': d['ytd_ei'],
+                        'pay_periods': pay_period_options[d['pp_label']]
+                    })
+
+    # Process employees (from either tab)
+    if employees:
         try:
-            # Read CSV
-            df = pd.read_csv(uploaded_file)
-            
-            # Validate columns
-            required_cols = ['Employee Name', 'Gross Pay', 'YTD CPP', 'YTD EI', 'Pay Periods']
-            missing = [col for col in required_cols if col not in df.columns]
-            
-            if missing:
-                st.error(f"❌ Missing columns: {', '.join(missing)}")
-                return
-            
-            # Convert to employee list
-            employees = []
-            for _, row in df.iterrows():
-                employees.append({
-                    'name': str(row['Employee Name']).strip(),
-                    'gross_pay': float(str(row['Gross Pay']).replace(',', '').replace('$', '')),
-                    'ytd_cpp': float(row['YTD CPP']),
-                    'ytd_ei': float(row['YTD EI']),
-                    'pay_periods': int(row['Pay Periods'])
-                })
-            
-            # Calculate
             with st.spinner("🔄 Processing payroll calculations..."):
                 results = []
                 for emp in employees:
                     calculator = PayrollCalculator(pay_periods=emp['pay_periods'])
                     results.append(calculator.calculate_payroll(emp))
-            
-            # Display results
+
             st.success(f"✅ Processed {len(results)} employees successfully!")
-            
+
             st.markdown("---")
             st.subheader("📊 Payroll Summary")
-            
-            # Summary cards
+
             total_gross = sum(float(r['gross_pay']) for r in results)
             total_net = sum(float(r['net_amount']) for r in results)
             total_remit = sum(float(r['remittance_total']) for r in results)
-            
+
             col1, col2, col3 = st.columns(3)
             col1.metric("Total Gross Pay", f"${total_gross:,.2f}")
             col2.metric("Total Net Pay", f"${total_net:,.2f}")
-            col3.metric("Total to Remit to CRA", f"${total_remit:,.2f}", 
+            col3.metric("Total to Remit to CRA", f"${total_remit:,.2f}",
                        help="Includes all deductions + employer CPP + employer EI")
-            
-            # Results table
+
             st.markdown("### Employee Details")
             results_df = pd.DataFrame([
                 {
@@ -382,15 +454,13 @@ def main():
                 }
                 for r in results
             ])
-            
+
             st.dataframe(results_df, use_container_width=True, hide_index=True)
-            
-            # Download button
+
             st.markdown("---")
             excel_data = create_excel_output(results, pay_period)
-            
             filename = f"payroll_{pay_period.replace(' ', '_').lower()}.xlsx"
-            
+
             st.download_button(
                 label="📥 Download Complete Excel Report",
                 data=excel_data,
@@ -399,15 +469,11 @@ def main():
                 type="primary",
                 use_container_width=True
             )
-            
+
             st.info("💡 Excel file contains: **Payroll Summary** + **T4 Preparation** sheets")
-            
+
         except Exception as e:
-            st.error(f"❌ Error processing file: {str(e)}")
-            st.info("Please check your CSV format matches the template.")
-    
-    elif uploaded_file:
-        st.info("👆 Click 'Calculate Payroll' to process")
+            st.error(f"❌ Error processing payroll: {str(e)}")
     
     # Footer
     st.markdown("---")
