@@ -19,6 +19,12 @@ st.markdown("""
 footer {visibility: hidden;}
 header {visibility: hidden;}
 [data-testid="stToolbar"] {visibility: hidden;}
+[data-testid="manage-app-button"] {visibility: hidden;}
+[data-testid="stDecoration"] {visibility: hidden;}
+._profileContainer_gzau3_53 {visibility: hidden;}
+.viewerBadge_container__r5tak {display: none;}
+iframe[title="streamlit_lottie.streamlit_lottie"] {display: none;}
+[data-testid="stStatusWidget"] {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
