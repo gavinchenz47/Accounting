@@ -292,7 +292,7 @@ def main():
     )
 
     # Input tabs
-    tab_csv, tab_manual = st.tabs(["📤 Upload CSV", "✏️ Manual Entry"])
+    tab_manual, tab_csv = st.tabs(["✏️ Manual Entry", "📤 Upload CSV"])
 
     employees = None
 

@@ -74,20 +74,26 @@ class TestPageLoad:
         tabs = page.locator("[data-baseweb='tab']")
         expect(tabs).to_have_count(2)
 
-    def test_csv_tab_label(self, page):
-        tabs = page.locator("[data-baseweb='tab']")
-        expect(tabs.nth(0)).to_contain_text("Upload CSV")
-
     def test_manual_tab_label(self, page):
         tabs = page.locator("[data-baseweb='tab']")
-        expect(tabs.nth(1)).to_contain_text("Manual Entry")
+        expect(tabs.nth(0)).to_contain_text("Manual Entry")
+
+    def test_csv_tab_label(self, page):
+        tabs = page.locator("[data-baseweb='tab']")
+        expect(tabs.nth(1)).to_contain_text("Upload CSV")
 
 
 # ── CSV upload flow ──
 
 class TestCSVUpload:
+    def _switch_to_csv_tab(self, page):
+        tabs = page.locator("[data-baseweb='tab']")
+        tabs.nth(1).click()
+        page.wait_for_timeout(1000)
+
     def test_upload_and_calculate(self, page):
         """Upload employees.csv and verify results appear."""
+        self._switch_to_csv_tab(page)
         # Upload CSV
         file_input = page.locator("input[type='file']")
         file_input.set_input_files(CSV_PATH)
@@ -103,6 +109,7 @@ class TestCSVUpload:
 
     def test_results_show_metrics(self, page):
         """After calculation, summary metrics should be visible."""
+        self._switch_to_csv_tab(page)
         file_input = page.locator("input[type='file']")
         file_input.set_input_files(CSV_PATH)
         page.wait_for_timeout(2000)
@@ -117,6 +124,7 @@ class TestCSVUpload:
 
     def test_download_button_appears(self, page):
         """Excel download button should appear after calculation."""
+        self._switch_to_csv_tab(page)
         file_input = page.locator("input[type='file']")
         file_input.set_input_files(CSV_PATH)
         page.wait_for_timeout(2000)
@@ -131,21 +139,15 @@ class TestCSVUpload:
 # ── Manual entry flow ──
 
 class TestManualEntry:
-    def _switch_to_manual_tab(self, page):
-        tabs = page.locator("[data-baseweb='tab']")
-        tabs.nth(1).click()
-        page.wait_for_timeout(1000)
-
     def test_manual_tab_has_form_fields(self, page):
-        """Manual entry tab should show labeled input fields."""
-        self._switch_to_manual_tab(page)
+        """Manual entry tab should show labeled input fields (default tab)."""
         expect(page.locator("text=Employee Name").first).to_be_visible()
         expect(page.locator("text=Gross Pay").first).to_be_visible()
         expect(page.locator("text=Pay Frequency").first).to_be_visible()
 
     def test_add_employee_button(self, page):
         """Clicking + Add Employee should add another set of fields."""
-        self._switch_to_manual_tab(page)
+        # Manual entry is the default tab, no switching needed
 
         # Should start with Employee 1
         expect(page.locator("text=Employee 1")).to_be_visible()
@@ -159,7 +161,7 @@ class TestManualEntry:
 
     def test_manual_entry_calculate(self, page):
         """Fill in one employee manually and calculate."""
-        self._switch_to_manual_tab(page)
+        # Manual entry is the default tab, no switching needed
 
         # Fill in employee name
         name_input = page.locator("input[aria-label='Employee Name']")
@@ -180,7 +182,7 @@ class TestManualEntry:
 
     def test_manual_entry_validation_empty_name(self, page):
         """Should show error when name is empty."""
-        self._switch_to_manual_tab(page)
+        # Manual entry is the default tab, no switching needed
 
         # Leave name empty, set gross pay
         gross_input = page.locator("input[aria-label='Gross Pay ($)']")
@@ -197,7 +199,7 @@ class TestManualEntry:
 
     def test_manual_entry_validation_zero_gross(self, page):
         """Should show error when gross pay is 0."""
-        self._switch_to_manual_tab(page)
+        # Manual entry is the default tab, no switching needed
 
         # Fill name, leave gross at 0
         name_input = page.locator("input[aria-label='Employee Name']")
@@ -212,7 +214,7 @@ class TestManualEntry:
 
     def test_remove_employee_button(self, page):
         """Remove Last button should remove an employee row."""
-        self._switch_to_manual_tab(page)
+        # Manual entry is the default tab, no switching needed
 
         # Add a second employee
         page.get_by_role("button", name="+ Add Employee").click()
