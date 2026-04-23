@@ -80,7 +80,7 @@ def main():
             help="CSV must have columns: Employee Name, Gross Pay, YTD CPP, YTD EI, Pay Periods"
         )
 
-        if uploaded_file and st.button("🧮 Calculate Payroll", type="primary", use_container_width=True, key="csv_calc"):
+        if uploaded_file and st.button("Calculate Payroll", type="primary", use_container_width=True, key="csv_calc"):
             try:
                 df = pd.read_csv(uploaded_file)
                 required_cols = ['Employee Name', 'Gross Pay', 'YTD CPP', 'YTD EI', 'Pay Periods']
@@ -162,7 +162,7 @@ def main():
             manual_data.append({'name': name, 'gross_str': gross_str, 'ytd_cpp_str': ytd_cpp_str, 'ytd_ei_str': ytd_ei_str, 'pp_label': pp})
 
         st.markdown("---")
-        if st.button("🧮 Calculate Payroll", type="primary", use_container_width=True, key="manual_calc"):
+        if st.button("Calculate Payroll", type="primary", use_container_width=True, key="manual_calc"):
             valid = True
             parsed = []
             for i, d in enumerate(manual_data):
