@@ -3,15 +3,7 @@
 import pytest
 from decimal import Decimal
 
-# Import calculator classes without triggering Streamlit's page config
-import importlib
-import sys
-from unittest.mock import MagicMock
-
-# Mock streamlit before importing app so st.set_page_config doesn't run
-sys.modules['streamlit'] = MagicMock()
-import app
-from app import PayrollCalculator, CRA2026
+from payroll import PayrollCalculator, CRA2026, create_excel_output
 
 
 # ── CRA2026 constants ──
@@ -405,7 +397,7 @@ class TestExcelOutput:
             calc.calculate_payroll({'name': 'John Smith', 'gross_pay': 5000, 'ytd_cpp': 0, 'ytd_ei': 0}),
             calc.calculate_payroll({'name': 'Jane Doe', 'gross_pay': 6500, 'ytd_cpp': 0, 'ytd_ei': 0}),
         ]
-        excel_data = app.create_excel_output(results, "January 2026")
+        excel_data = create_excel_output(results, "January 2026")
         assert excel_data is not None
         assert len(excel_data) > 0
 
@@ -416,7 +408,7 @@ class TestExcelOutput:
         results = [
             calc.calculate_payroll({'name': 'Test', 'gross_pay': 5000, 'ytd_cpp': 0, 'ytd_ei': 0}),
         ]
-        excel_data = app.create_excel_output(results, "January 2026")
+        excel_data = create_excel_output(results, "January 2026")
         wb = load_workbook(io.BytesIO(excel_data))
         assert len(wb.sheetnames) == 2
         assert "Payroll Summary" in wb.sheetnames
@@ -430,7 +422,7 @@ class TestExcelOutput:
             calc.calculate_payroll({'name': f'Emp {i}', 'gross_pay': 5000, 'ytd_cpp': 0, 'ytd_ei': 0})
             for i in range(3)
         ]
-        excel_data = app.create_excel_output(results, "March 2026")
+        excel_data = create_excel_output(results, "March 2026")
         wb = load_workbook(io.BytesIO(excel_data))
         ws = wb["Payroll Summary"]
         # Data starts at row 5, 3 employees = rows 5,6,7
