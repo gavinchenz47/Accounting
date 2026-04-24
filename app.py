@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 import requests
 from supabase import create_client
+from streamlit_js_eval import streamlit_js_eval
 
 from payroll import PayrollCalculator, CRA2026, create_excel_output
 from provinces import PROVINCE_LIST, PROVINCES
@@ -39,8 +40,23 @@ def get_supabase():
     return create_client(url, key)
 
 
+def _save_tokens_to_browser(access_token, refresh_token):
+    """Save auth tokens to browser localStorage."""
+    streamlit_js_eval(js_expressions=f"localStorage.setItem('sb_access_token', '{access_token}'); localStorage.setItem('sb_refresh_token', '{refresh_token}'); 'saved'", key="save_tokens")
+
+
+def _clear_browser_tokens():
+    """Clear auth tokens from browser localStorage."""
+    streamlit_js_eval(js_expressions="localStorage.removeItem('sb_access_token'); localStorage.removeItem('sb_refresh_token'); 'cleared'", key="clear_tokens")
+
+
+def _get_browser_refresh_token():
+    """Read refresh token from browser localStorage synchronously."""
+    return streamlit_js_eval(js_expressions="localStorage.getItem('sb_refresh_token')", key="get_refresh_token")
+
+
 def handle_auth_callback():
-    """Handle Supabase OAuth callback — supports both code and token flows."""
+    """Handle Supabase OAuth callback and session restoration."""
     # Check for hash fragment tokens (implicit flow)
     st.components.v1.html("""
     <script>
@@ -58,15 +74,16 @@ def handle_auth_callback():
     """, height=0)
 
     params = st.query_params
+    supabase = get_supabase()
 
     # Handle PKCE code flow (Supabase v2 default)
     code = params.get("code")
     if code:
         try:
-            supabase = get_supabase()
             response = supabase.auth.exchange_code_for_session({"auth_code": code})
             st.session_state.user = response.user
             st.session_state.access_token = response.session.access_token
+            _save_tokens_to_browser(response.session.access_token, response.session.refresh_token)
             st.query_params.clear()
             st.rerun()
         except Exception as e:
@@ -78,19 +95,35 @@ def handle_auth_callback():
     refresh_token = params.get("refresh_token")
     if access_token and refresh_token:
         try:
-            supabase = get_supabase()
             response = supabase.auth.set_session(access_token, refresh_token)
             st.session_state.user = response.user
             st.session_state.access_token = access_token
+            _save_tokens_to_browser(access_token, refresh_token)
             st.query_params.clear()
             st.rerun()
         except Exception as e:
             st.error(f"Authentication failed: {str(e)}")
+        return
+
 
 
 def show_login():
     """Show login screen with Google sign-in."""
     handle_auth_callback()
+
+    # Try restoring session from browser localStorage
+    if 'user' not in st.session_state or not st.session_state.user:
+        refresh_token = _get_browser_refresh_token()
+        if refresh_token and refresh_token != "null":
+            try:
+                supabase = get_supabase()
+                response = supabase.auth.refresh_session(refresh_token)
+                st.session_state.user = response.user
+                st.session_state.access_token = response.session.access_token
+                _save_tokens_to_browser(response.session.access_token, response.session.refresh_token)
+                st.rerun()
+            except Exception:
+                _clear_browser_tokens()
 
     st.title("🇨🇦 CRA Payroll Deductions Calculator")
     st.markdown("---")
@@ -133,6 +166,7 @@ def main():
                     get_supabase().auth.sign_out()
                 except Exception:
                     pass
+                _clear_browser_tokens()
                 st.session_state.pop('user', None)
                 st.session_state.pop('access_token', None)
                 st.rerun()

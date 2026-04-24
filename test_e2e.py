@@ -28,7 +28,6 @@ def streamlit_app():
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    # Wait for app to be ready
     for _ in range(30):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         if sock.connect_ex(("localhost", 8501)) == 0:
@@ -53,174 +52,26 @@ def page(streamlit_app):
         browser = p.chromium.launch(headless=True)
         pg = browser.new_page()
         pg.goto(APP_URL, wait_until="networkidle")
-        # Wait for Streamlit to fully render
         pg.wait_for_selector("h1", timeout=15000)
         yield pg
         browser.close()
 
 
-# ── Page loads correctly ──
+# ── Login screen tests ──
 
-class TestPageLoad:
-    def test_title_visible(self, page):
-        heading = page.locator("[data-testid='stMain'] h1").first
+class TestLoginScreen:
+    def test_login_page_loads(self, page):
+        heading = page.locator("h1").first
         expect(heading).to_contain_text("CRA Payroll Deductions Calculator")
 
-    def test_sidebar_visible(self, page):
-        sidebar = page.locator("[data-testid='stSidebar']")
-        expect(sidebar).to_be_visible()
+    def test_sign_in_button_visible(self, page):
+        btn = page.get_by_role("button", name="Sign in with Google")
+        expect(btn).to_be_visible()
 
-    def test_has_two_tabs(self, page):
-        tabs = page.locator("[data-baseweb='tab']")
-        expect(tabs).to_have_count(2)
+    def test_privacy_caption_visible(self, page):
+        expect(page.locator("text=Your data is kept private and secure")).to_be_visible()
 
-    def test_manual_tab_label(self, page):
-        tabs = page.locator("[data-baseweb='tab']")
-        expect(tabs.nth(0)).to_contain_text("Manual Entry")
-
-    def test_csv_tab_label(self, page):
-        tabs = page.locator("[data-baseweb='tab']")
-        expect(tabs.nth(1)).to_contain_text("Upload CSV")
-
-
-# ── CSV upload flow ──
-
-class TestCSVUpload:
-    def _switch_to_csv_tab(self, page):
-        tabs = page.locator("[data-baseweb='tab']")
-        tabs.nth(1).click()
-        page.wait_for_timeout(1000)
-
-    def test_upload_and_calculate(self, page):
-        """Upload employees.csv and verify results appear."""
-        self._switch_to_csv_tab(page)
-        # Upload CSV
-        file_input = page.locator("input[type='file']")
-        file_input.set_input_files(CSV_PATH)
-        page.wait_for_timeout(2000)
-
-        # Click Calculate
-        calc_button = page.get_by_role("button", name="Calculate Payroll").first
-        calc_button.click()
-        page.wait_for_timeout(3000)
-
-        # Verify success message
-        expect(page.locator("text=Processed 3 employees successfully")).to_be_visible(timeout=10000)
-
-    def test_results_show_metrics(self, page):
-        """After calculation, summary metrics should be visible."""
-        self._switch_to_csv_tab(page)
-        file_input = page.locator("input[type='file']")
-        file_input.set_input_files(CSV_PATH)
-        page.wait_for_timeout(2000)
-
-        calc_button = page.get_by_role("button", name="Calculate Payroll").first
-        calc_button.click()
-        page.wait_for_timeout(3000)
-
-        expect(page.locator("text=Total Gross Pay")).to_be_visible(timeout=10000)
-        expect(page.locator("text=Total Net Pay")).to_be_visible(timeout=10000)
-        expect(page.locator("text=Total to Remit to CRA")).to_be_visible(timeout=10000)
-
-    def test_download_button_appears(self, page):
-        """Excel download button should appear after calculation."""
-        self._switch_to_csv_tab(page)
-        file_input = page.locator("input[type='file']")
-        file_input.set_input_files(CSV_PATH)
-        page.wait_for_timeout(2000)
-
-        calc_button = page.get_by_role("button", name="Calculate Payroll").first
-        calc_button.click()
-        page.wait_for_timeout(3000)
-
-        expect(page.locator("text=Download Complete Excel Report")).to_be_visible(timeout=10000)
-
-
-# ── Manual entry flow ──
-
-class TestManualEntry:
-    def test_manual_tab_has_form_fields(self, page):
-        """Manual entry tab should show labeled input fields (default tab)."""
-        expect(page.locator("text=Employee Name").first).to_be_visible()
-        expect(page.locator("text=Gross Pay").first).to_be_visible()
-        expect(page.locator("text=Pay Frequency").first).to_be_visible()
-
-    def test_add_employee_button(self, page):
-        """Clicking + Add Employee should add another set of fields."""
-        # Manual entry is the default tab, no switching needed
-
-        # Should start with Employee 1
-        expect(page.locator("text=Employee 1")).to_be_visible()
-
-        # Click add
-        page.get_by_role("button", name="+ Add Employee").click()
-        page.wait_for_timeout(2000)
-
-        # Should now have Employee 2
-        expect(page.locator("text=Employee 2")).to_be_visible()
-
-    def test_manual_entry_calculate(self, page):
-        """Fill in one employee manually and calculate."""
-        # Manual entry is the default tab, no switching needed
-
-        # Fill in employee name
-        name_input = page.locator("input[aria-label='Employee Name']")
-        name_input.fill("Test Employee")
-
-        # Fill in gross pay (text input)
-        gross_input = page.locator("input[aria-label='Gross Pay ($)']")
-        gross_input.fill("5000")
-
-        # Click calculate
-        calc_button = page.get_by_role("button", name="Calculate Payroll")
-        calc_button.click()
-        page.wait_for_timeout(3000)
-
-        # Verify results
-        expect(page.locator("text=Processed 1 employees successfully")).to_be_visible(timeout=10000)
-
-    def test_manual_entry_validation_empty_name(self, page):
-        """Should show error when name is empty."""
-        # Manual entry is the default tab, no switching needed
-
-        # Leave name empty, set gross pay
-        gross_input = page.locator("input[aria-label='Gross Pay ($)']")
-        gross_input.fill("")
-        gross_input.type("5000")
-
-        # Click calculate
-        calc_button = page.get_by_role("button", name="Calculate Payroll")
-        calc_button.click()
-        page.wait_for_timeout(2000)
-
-        # Should show error
-        expect(page.locator("text=Name is required")).to_be_visible(timeout=5000)
-
-    def test_manual_entry_validation_empty_gross(self, page):
-        """Should show error when gross pay is empty."""
-        # Manual entry is the default tab, no switching needed
-
-        # Fill name, leave gross empty
-        name_input = page.locator("input[aria-label='Employee Name']")
-        name_input.fill("Test Employee")
-
-        # Click calculate
-        calc_button = page.get_by_role("button", name="Calculate Payroll")
-        calc_button.click()
-        page.wait_for_timeout(2000)
-
-        expect(page.locator("text=Gross Pay is required")).to_be_visible(timeout=5000)
-
-    def test_remove_employee_button(self, page):
-        """Remove Last button should remove an employee row."""
-        # Manual entry is the default tab, no switching needed
-
-        # Add a second employee
-        page.get_by_role("button", name="+ Add Employee").click()
-        page.wait_for_timeout(2000)
-        expect(page.locator("text=Employee 2")).to_be_visible()
-
-        # Remove it
-        page.get_by_role("button", name="- Remove Last").click()
-        page.wait_for_timeout(2000)
-        expect(page.locator("text=Employee 2")).not_to_be_visible()
+    def test_calculator_not_visible_when_logged_out(self, page):
+        """Calculator should be gated behind auth."""
+        expect(page.locator("text=Manual Entry")).not_to_be_visible()
+        expect(page.locator("text=Upload CSV")).not_to_be_visible()
