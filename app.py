@@ -3,7 +3,6 @@ import pandas as pd
 from datetime import datetime
 import requests
 from supabase import create_client
-from streamlit_js_eval import streamlit_js_eval
 
 from payroll import PayrollCalculator, CRA2026, create_excel_output
 from provinces import PROVINCE_LIST, PROVINCES
@@ -41,18 +40,28 @@ def get_supabase():
 
 
 def _save_tokens_to_browser(access_token, refresh_token):
-    """Save auth tokens to browser localStorage."""
-    streamlit_js_eval(js_expressions=f"localStorage.setItem('sb_access_token', '{access_token}'); localStorage.setItem('sb_refresh_token', '{refresh_token}'); 'saved'", key="save_tokens")
+    """Save refresh token to browser cookie via JS on the parent frame."""
+    # Use JS to set cookie — must target parent frame to escape Streamlit's iframe
+    st.markdown(f"""
+    <script>
+        document.cookie = 'sb_refresh_token={refresh_token}; path=/; max-age=2592000; SameSite=Lax';
+    </script>
+    """, unsafe_allow_html=True)
 
 
 def _clear_browser_tokens():
-    """Clear auth tokens from browser localStorage."""
-    streamlit_js_eval(js_expressions="localStorage.removeItem('sb_access_token'); localStorage.removeItem('sb_refresh_token'); 'cleared'", key="clear_tokens")
+    """Clear refresh token cookie."""
+    st.markdown("""
+    <script>
+        document.cookie = 'sb_refresh_token=; path=/; max-age=0';
+    </script>
+    """, unsafe_allow_html=True)
 
 
 def _get_browser_refresh_token():
-    """Read refresh token from browser localStorage synchronously."""
-    return streamlit_js_eval(js_expressions="localStorage.getItem('sb_refresh_token')", key="get_refresh_token")
+    """Read refresh token from cookie via Streamlit's server-side cookie access."""
+    cookies = st.context.cookies
+    return cookies.get('sb_refresh_token')
 
 
 def handle_auth_callback():
@@ -83,8 +92,11 @@ def handle_auth_callback():
             response = supabase.auth.exchange_code_for_session({"auth_code": code})
             st.session_state.user = response.user
             st.session_state.access_token = response.session.access_token
+
+            # Save tokens and give JS time to execute before rerun
             _save_tokens_to_browser(response.session.access_token, response.session.refresh_token)
             st.query_params.clear()
+
             st.rerun()
         except Exception as e:
             st.error(f"Authentication failed: {str(e)}")
@@ -98,8 +110,10 @@ def handle_auth_callback():
             response = supabase.auth.set_session(access_token, refresh_token)
             st.session_state.user = response.user
             st.session_state.access_token = access_token
+
             _save_tokens_to_browser(access_token, refresh_token)
             st.query_params.clear()
+
             st.rerun()
         except Exception as e:
             st.error(f"Authentication failed: {str(e)}")
@@ -111,19 +125,24 @@ def show_login():
     """Show login screen with Google sign-in."""
     handle_auth_callback()
 
-    # Try restoring session from browser localStorage
+    # Try restoring session from cookie
     if 'user' not in st.session_state or not st.session_state.user:
         refresh_token = _get_browser_refresh_token()
-        if refresh_token and refresh_token != "null":
+        if refresh_token:
             try:
                 supabase = get_supabase()
                 response = supabase.auth.refresh_session(refresh_token)
                 st.session_state.user = response.user
                 st.session_state.access_token = response.session.access_token
+                # Update cookie with new tokens
                 _save_tokens_to_browser(response.session.access_token, response.session.refresh_token)
                 st.rerun()
             except Exception:
                 _clear_browser_tokens()
+
+    # If user was restored, don't show login
+    if 'user' in st.session_state and st.session_state.user:
+        return
 
     st.title("🇨🇦 CRA Payroll Deductions Calculator")
     st.markdown("---")
@@ -169,6 +188,7 @@ def main():
                 _clear_browser_tokens()
                 st.session_state.pop('user', None)
                 st.session_state.pop('access_token', None)
+
                 st.rerun()
 
         st.markdown("---")
@@ -475,3 +495,6 @@ if __name__ == "__main__":
         main()
     else:
         show_login()
+        # show_login may have restored session — check again
+        if 'user' in st.session_state and st.session_state.user:
+            main()
