@@ -39,53 +39,52 @@ def get_supabase():
     return create_client(url, key)
 
 
+def handle_auth_callback():
+    """Check URL for Supabase auth callback tokens."""
+    params = st.query_params
+    access_token = params.get("access_token")
+    refresh_token = params.get("refresh_token")
+    if access_token and refresh_token:
+        try:
+            supabase = get_supabase()
+            response = supabase.auth.set_session(access_token, refresh_token)
+            st.session_state.user = response.user
+            st.session_state.access_token = access_token
+            st.query_params.clear()
+            st.rerun()
+        except Exception:
+            pass
+
+
 def show_login():
-    """Show login/signup screen."""
+    """Show login screen with Google sign-in."""
+    handle_auth_callback()
+
     st.title("🇨🇦 CRA Payroll Deductions Calculator")
     st.markdown("---")
 
     col_left, col_center, col_right = st.columns([1, 2, 1])
     with col_center:
         st.markdown("### Sign in to continue")
+        st.markdown("")
 
-        tab_login, tab_signup = st.tabs(["Sign In", "Create Account"])
+        if st.button("Sign in with Google", type="primary", use_container_width=True):
+            try:
+                supabase = get_supabase()
+                # Get the current app URL for redirect
+                response = supabase.auth.sign_in_with_oauth({
+                    "provider": "google",
+                    "options": {
+                        "redirect_to": st.secrets["supabase"].get("redirect_url", "http://localhost:8501")
+                    }
+                })
+                if response.url:
+                    st.markdown(f'<meta http-equiv="refresh" content="0;url={response.url}">', unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Sign in failed: {str(e)}")
 
-        with tab_login:
-            email = st.text_input("Email", key="login_email", placeholder="you@example.com")
-            password = st.text_input("Password", type="password", key="login_password")
-            if st.button("Sign In", type="primary", use_container_width=True, key="login_btn"):
-                if not email or not password:
-                    st.error("Email and password are required.")
-                else:
-                    try:
-                        supabase = get_supabase()
-                        response = supabase.auth.sign_in_with_password({"email": email, "password": password})
-                        st.session_state.user = response.user
-                        st.session_state.access_token = response.session.access_token
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Sign in failed: {str(e)}")
-
-        with tab_signup:
-            new_email = st.text_input("Email", key="signup_email", placeholder="you@example.com")
-            new_password = st.text_input("Password", type="password", key="signup_password",
-                                         help="At least 6 characters")
-            confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm")
-            if st.button("Create Account", type="primary", use_container_width=True, key="signup_btn"):
-                if not new_email or not new_password:
-                    st.error("Email and password are required.")
-                elif new_password != confirm_password:
-                    st.error("Passwords do not match.")
-                elif len(new_password) < 6:
-                    st.error("Password must be at least 6 characters.")
-                else:
-                    try:
-                        supabase = get_supabase()
-                        response = supabase.auth.sign_up({"email": new_email, "password": new_password})
-                        if response.user:
-                            st.success("Account created. Check your email to confirm, then sign in.")
-                    except Exception as e:
-                        st.error(f"Sign up failed: {str(e)}")
+        st.markdown("")
+        st.caption("Your data is kept private and secure.")
 
 
 # Main App
