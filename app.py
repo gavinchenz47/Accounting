@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import os
+import json
 import requests
 from supabase import create_client
 
@@ -39,81 +41,44 @@ def get_supabase():
     return create_client(url, key)
 
 
-def _save_tokens_to_browser(access_token, refresh_token):
-    """Save refresh token to browser cookie via JS on the parent frame."""
-    # Use JS to set cookie — must target parent frame to escape Streamlit's iframe
-    st.markdown(f"""
-    <script>
-        document.cookie = 'sb_refresh_token={refresh_token}; path=/; max-age=2592000; SameSite=Lax';
-    </script>
-    """, unsafe_allow_html=True)
+SESSION_FILE = os.path.join(os.path.dirname(__file__), '.session.json')
 
 
-def _clear_browser_tokens():
-    """Clear refresh token cookie."""
-    st.markdown("""
-    <script>
-        document.cookie = 'sb_refresh_token=; path=/; max-age=0';
-    </script>
-    """, unsafe_allow_html=True)
+def _save_session(access_token, refresh_token, email):
+    """Save session to server-side file."""
+    with open(SESSION_FILE, 'w') as f:
+        json.dump({'access_token': access_token, 'refresh_token': refresh_token, 'email': email}, f)
 
 
-def _get_browser_refresh_token():
-    """Read refresh token from cookie via Streamlit's server-side cookie access."""
-    cookies = st.context.cookies
-    return cookies.get('sb_refresh_token')
+def _load_session():
+    """Load session from server-side file. Returns dict or None."""
+    if os.path.exists(SESSION_FILE):
+        try:
+            with open(SESSION_FILE, 'r') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+
+def _clear_session():
+    """Delete session file."""
+    if os.path.exists(SESSION_FILE):
+        os.remove(SESSION_FILE)
 
 
 def handle_auth_callback():
-    """Handle Supabase OAuth callback and session restoration."""
-    # Check for hash fragment tokens (implicit flow)
-    st.components.v1.html("""
-    <script>
-        const hash = window.parent.location.hash;
-        if (hash && hash.includes('access_token')) {
-            const params = new URLSearchParams(hash.substring(1));
-            const accessToken = params.get('access_token');
-            const refreshToken = params.get('refresh_token');
-            if (accessToken && refreshToken) {
-                const baseUrl = window.parent.location.origin + window.parent.location.pathname;
-                window.parent.location.href = baseUrl + '?access_token=' + accessToken + '&refresh_token=' + refreshToken;
-            }
-        }
-    </script>
-    """, height=0)
-
+    """Handle Supabase OAuth PKCE callback."""
     params = st.query_params
-    supabase = get_supabase()
-
-    # Handle PKCE code flow (Supabase v2 default)
     code = params.get("code")
     if code:
         try:
+            supabase = get_supabase()
             response = supabase.auth.exchange_code_for_session({"auth_code": code})
             st.session_state.user = response.user
             st.session_state.access_token = response.session.access_token
-
-            # Save tokens and give JS time to execute before rerun
-            _save_tokens_to_browser(response.session.access_token, response.session.refresh_token)
+            _save_session(response.session.access_token, response.session.refresh_token, response.user.email)
             st.query_params.clear()
-
-            st.rerun()
-        except Exception as e:
-            st.error(f"Authentication failed: {str(e)}")
-        return
-
-    # Handle implicit token flow
-    access_token = params.get("access_token")
-    refresh_token = params.get("refresh_token")
-    if access_token and refresh_token:
-        try:
-            response = supabase.auth.set_session(access_token, refresh_token)
-            st.session_state.user = response.user
-            st.session_state.access_token = access_token
-
-            _save_tokens_to_browser(access_token, refresh_token)
-            st.query_params.clear()
-
             st.rerun()
         except Exception as e:
             st.error(f"Authentication failed: {str(e)}")
@@ -125,20 +90,19 @@ def show_login():
     """Show login screen with Google sign-in."""
     handle_auth_callback()
 
-    # Try restoring session from cookie
+    # Try restoring session from saved file
     if 'user' not in st.session_state or not st.session_state.user:
-        refresh_token = _get_browser_refresh_token()
-        if refresh_token:
+        saved = _load_session()
+        if saved and saved.get('refresh_token'):
             try:
                 supabase = get_supabase()
-                response = supabase.auth.refresh_session(refresh_token)
+                response = supabase.auth.refresh_session(saved['refresh_token'])
                 st.session_state.user = response.user
                 st.session_state.access_token = response.session.access_token
-                # Update cookie with new tokens
-                _save_tokens_to_browser(response.session.access_token, response.session.refresh_token)
+                _save_session(response.session.access_token, response.session.refresh_token, response.user.email)
                 st.rerun()
             except Exception:
-                _clear_browser_tokens()
+                _clear_session()
 
     # If user was restored, don't show login
     if 'user' in st.session_state and st.session_state.user:
@@ -185,10 +149,9 @@ def main():
                     get_supabase().auth.sign_out()
                 except Exception:
                     pass
-                _clear_browser_tokens()
+                _clear_session()
                 st.session_state.pop('user', None)
                 st.session_state.pop('access_token', None)
-
                 st.rerun()
 
         st.markdown("---")

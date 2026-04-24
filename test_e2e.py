@@ -47,7 +47,10 @@ def streamlit_app():
 
 @pytest.fixture()
 def page(streamlit_app):
-    """Provide a fresh browser page for each test."""
+    """Provide a fresh browser page for each test. Clears session file to ensure logged-out state."""
+    session_file = os.path.join(os.path.dirname(__file__), '.session.json')
+    if os.path.exists(session_file):
+        os.remove(session_file)
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         pg = browser.new_page()
