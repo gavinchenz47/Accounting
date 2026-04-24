@@ -40,8 +40,40 @@ def get_supabase():
 
 
 def handle_auth_callback():
-    """Check URL for Supabase auth callback tokens."""
+    """Handle Supabase OAuth callback — supports both code and token flows."""
+    # Check for hash fragment tokens (implicit flow)
+    st.components.v1.html("""
+    <script>
+        const hash = window.parent.location.hash;
+        if (hash && hash.includes('access_token')) {
+            const params = new URLSearchParams(hash.substring(1));
+            const accessToken = params.get('access_token');
+            const refreshToken = params.get('refresh_token');
+            if (accessToken && refreshToken) {
+                const baseUrl = window.parent.location.origin + window.parent.location.pathname;
+                window.parent.location.href = baseUrl + '?access_token=' + accessToken + '&refresh_token=' + refreshToken;
+            }
+        }
+    </script>
+    """, height=0)
+
     params = st.query_params
+
+    # Handle PKCE code flow (Supabase v2 default)
+    code = params.get("code")
+    if code:
+        try:
+            supabase = get_supabase()
+            response = supabase.auth.exchange_code_for_session({"auth_code": code})
+            st.session_state.user = response.user
+            st.session_state.access_token = response.session.access_token
+            st.query_params.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Authentication failed: {str(e)}")
+        return
+
+    # Handle implicit token flow
     access_token = params.get("access_token")
     refresh_token = params.get("refresh_token")
     if access_token and refresh_token:
@@ -52,8 +84,8 @@ def handle_auth_callback():
             st.session_state.access_token = access_token
             st.query_params.clear()
             st.rerun()
-        except Exception:
-            pass
+        except Exception as e:
+            st.error(f"Authentication failed: {str(e)}")
 
 
 def show_login():
@@ -71,11 +103,10 @@ def show_login():
         if st.button("Sign in with Google", type="primary", use_container_width=True):
             try:
                 supabase = get_supabase()
-                # Get the current app URL for redirect
                 response = supabase.auth.sign_in_with_oauth({
                     "provider": "google",
                     "options": {
-                        "redirect_to": st.secrets["supabase"].get("redirect_url", "http://localhost:8501")
+                        "redirect_to": st.secrets["supabase"].get("redirect_url", "http://localhost:8502")
                     }
                 })
                 if response.url:
