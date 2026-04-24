@@ -40,7 +40,7 @@ class TestProductionSmokeTest:
         expect(_loc(page, "h1").first).to_be_visible()
 
     def test_title_text(self, page):
-        expect(_loc(page, "[data-testid='stMain'] h1").first).to_contain_text("CRA Payroll Automation Tool")
+        expect(_loc(page, "[data-testid='stMain'] h1").first).to_contain_text("CRA Payroll Deductions Calculator")
 
     def test_has_two_tabs(self, page):
         expect(_loc(page, "[data-baseweb='tab']")).to_have_count(2)

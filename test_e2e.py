@@ -64,7 +64,7 @@ def page(streamlit_app):
 class TestPageLoad:
     def test_title_visible(self, page):
         heading = page.locator("[data-testid='stMain'] h1").first
-        expect(heading).to_contain_text("CRA Payroll Automation Tool")
+        expect(heading).to_contain_text("CRA Payroll Deductions Calculator")
 
     def test_sidebar_visible(self, page):
         sidebar = page.locator("[data-testid='stSidebar']")

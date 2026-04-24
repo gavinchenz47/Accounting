@@ -8,7 +8,7 @@ from provinces import PROVINCE_LIST, PROVINCES
 
 # Page config
 st.set_page_config(
-    page_title="CRA Payroll Automation",
+    page_title="CRA Payroll Deductions Calculator",
     page_icon="💼",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -50,7 +50,7 @@ def main():
         st.markdown("`Employee Name, Gross Pay, YTD CPP, YTD EI, Pay Periods`")
     
     # Header
-    st.title("🇨🇦 CRA Payroll Automation Tool")
+    st.title("🇨🇦 CRA Payroll Deductions Calculator")
     st.markdown("**Automated payroll calculations matching the CRA website - Get T4-ready Excel in seconds**")
     st.markdown("---")
     
