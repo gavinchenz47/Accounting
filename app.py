@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import requests
+from supabase import create_client
 
 from payroll import PayrollCalculator, CRA2026, create_excel_output
 from provinces import PROVINCE_LIST, PROVINCES
@@ -30,20 +31,91 @@ iframe[title="streamlit_lottie.streamlit_lottie"] {display: none;}
 </style>
 """, unsafe_allow_html=True)
 
+# Supabase client
+@st.cache_resource
+def get_supabase():
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    return create_client(url, key)
+
+
+def show_login():
+    """Show login/signup screen."""
+    st.title("🇨🇦 CRA Payroll Deductions Calculator")
+    st.markdown("---")
+
+    col_left, col_center, col_right = st.columns([1, 2, 1])
+    with col_center:
+        st.markdown("### Sign in to continue")
+
+        tab_login, tab_signup = st.tabs(["Sign In", "Create Account"])
+
+        with tab_login:
+            email = st.text_input("Email", key="login_email", placeholder="you@example.com")
+            password = st.text_input("Password", type="password", key="login_password")
+            if st.button("Sign In", type="primary", use_container_width=True, key="login_btn"):
+                if not email or not password:
+                    st.error("Email and password are required.")
+                else:
+                    try:
+                        supabase = get_supabase()
+                        response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                        st.session_state.user = response.user
+                        st.session_state.access_token = response.session.access_token
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Sign in failed: {str(e)}")
+
+        with tab_signup:
+            new_email = st.text_input("Email", key="signup_email", placeholder="you@example.com")
+            new_password = st.text_input("Password", type="password", key="signup_password",
+                                         help="At least 6 characters")
+            confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm")
+            if st.button("Create Account", type="primary", use_container_width=True, key="signup_btn"):
+                if not new_email or not new_password:
+                    st.error("Email and password are required.")
+                elif new_password != confirm_password:
+                    st.error("Passwords do not match.")
+                elif len(new_password) < 6:
+                    st.error("Password must be at least 6 characters.")
+                else:
+                    try:
+                        supabase = get_supabase()
+                        response = supabase.auth.sign_up({"email": new_email, "password": new_password})
+                        if response.user:
+                            st.success("Account created. Check your email to confirm, then sign in.")
+                    except Exception as e:
+                        st.error(f"Sign up failed: {str(e)}")
+
+
 # Main App
 def main():
     # Sidebar
     with st.sidebar:
         st.title("💼 CRA Payroll")
+
+        # User info and logout
+        user = st.session_state.get('user')
+        if user:
+            st.caption(f"Signed in as **{user.email}**")
+            if st.button("Sign Out", use_container_width=True):
+                try:
+                    get_supabase().auth.sign_out()
+                except Exception:
+                    pass
+                st.session_state.pop('user', None)
+                st.session_state.pop('access_token', None)
+                st.rerun()
+
         st.markdown("---")
         st.markdown("### About")
         st.info("Automates CRA payroll calculations. Upload a CSV or enter employee data manually to get T4-ready Excel reports.")
-        
+
         st.markdown("### 2026 CRA Rates")
         st.text(f"CPP: 5.95%")
         st.text(f"EI: 1.63%")
         st.text(f"Federal Tax: 14% (base)")
-        
+
         st.markdown("---")
         st.markdown("### Need Help?")
         st.markdown("📄 Upload a CSV with columns:")
@@ -335,4 +407,7 @@ def main():
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
-    main()
+    if 'user' in st.session_state and st.session_state.user:
+        main()
+    else:
+        show_login()
