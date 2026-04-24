@@ -4,6 +4,7 @@ import pytest
 from decimal import Decimal
 
 from payroll import PayrollCalculator, CRA2026, create_excel_output
+from provinces import PROVINCES, get_health_premium, get_surtax
 
 
 # ── CRA2026 constants ──
@@ -31,13 +32,13 @@ class TestCRA2026Constants:
         assert CRA2026.FEDERAL_BPA == Decimal('16452.00')
 
     def test_ontario_bpa(self):
-        assert CRA2026.ONTARIO_BPA == Decimal('12989.00')
+        assert PROVINCES['ON']['bpa'] == Decimal('12989.00')
 
     def test_federal_brackets_count(self):
         assert len(CRA2026.FEDERAL_BRACKETS) == 5
 
     def test_ontario_brackets_count(self):
-        assert len(CRA2026.ONTARIO_BRACKETS) == 5
+        assert len(PROVINCES['ON']['brackets']) == 5
 
 
 # ── CPP calculations ──
@@ -128,63 +129,54 @@ class TestEICalculation:
 # ── Ontario Health Premium ──
 
 class TestOntarioHealthPremium:
-    def setup_method(self):
-        self.calc = PayrollCalculator(pay_periods=12)
-
     def test_ohp_below_20000(self):
-        assert self.calc._calculate_ohp(Decimal('15000')) == Decimal('0')
+        assert get_health_premium('ON', Decimal('15000')) == Decimal('0')
 
     def test_ohp_at_20000(self):
-        assert self.calc._calculate_ohp(Decimal('20000')) == Decimal('0')
+        assert get_health_premium('ON', Decimal('20000')) == Decimal('0')
 
     def test_ohp_between_20000_and_36000(self):
-        # 0.06 * (30000 - 20000) = 600, min(300, 600) = 300
-        assert self.calc._calculate_ohp(Decimal('30000')) == Decimal('300')
+        assert get_health_premium('ON', Decimal('30000')) == Decimal('300')
 
     def test_ohp_at_25000(self):
-        # 0.06 * (25000 - 20000) = 300, min(300, 300) = 300
-        assert self.calc._calculate_ohp(Decimal('25000')) == Decimal('300')
+        assert get_health_premium('ON', Decimal('25000')) == Decimal('300')
 
     def test_ohp_between_36000_and_48000(self):
-        # 300 + 0.06 * (42000 - 36000) = 300 + 360 = 660, min(450, 660) = 450
-        assert self.calc._calculate_ohp(Decimal('42000')) == Decimal('450')
+        assert get_health_premium('ON', Decimal('42000')) == Decimal('450')
 
     def test_ohp_between_48000_and_72000(self):
-        # 450 + 0.25 * (60000 - 48000) = 450 + 3000 = 3450, min(600, 3450) = 600
-        assert self.calc._calculate_ohp(Decimal('60000')) == Decimal('600')
+        assert get_health_premium('ON', Decimal('60000')) == Decimal('600')
 
     def test_ohp_between_72000_and_200000(self):
-        # 600 + 0.25 * (100000 - 72000) = 600 + 7000 = 7600, min(750, 7600) = 750
-        assert self.calc._calculate_ohp(Decimal('100000')) == Decimal('750')
+        assert get_health_premium('ON', Decimal('100000')) == Decimal('750')
 
     def test_ohp_above_200000(self):
-        # 750 + 0.25 * (250000 - 200000) = 750 + 12500 = 13250, min(900, 13250) = 900
-        assert self.calc._calculate_ohp(Decimal('250000')) == Decimal('900')
+        assert get_health_premium('ON', Decimal('250000')) == Decimal('900')
+
+    def test_no_ohp_for_other_provinces(self):
+        assert get_health_premium('BC', Decimal('100000')) == Decimal('0')
+        assert get_health_premium('AB', Decimal('100000')) == Decimal('0')
 
 
 # ── Ontario Surtax ──
 
 class TestOntarioSurtax:
-    def setup_method(self):
-        self.calc = PayrollCalculator(pay_periods=12)
-
     def test_surtax_below_threshold(self):
-        assert self.calc._calculate_surtax(Decimal('5000')) == Decimal('0')
+        assert get_surtax('ON', Decimal('5000')) == Decimal('0')
 
     def test_surtax_at_5818(self):
-        assert self.calc._calculate_surtax(Decimal('5818')) == Decimal('0')
+        assert get_surtax('ON', Decimal('5818')) == Decimal('0')
 
     def test_surtax_between_5818_and_7446(self):
-        # 0.20 * (6500 - 5818) = 0.20 * 682 = 136.40
-        result = self.calc._calculate_surtax(Decimal('6500'))
+        result = get_surtax('ON', Decimal('6500'))
         assert result == Decimal('136.40')
 
     def test_surtax_above_7446(self):
-        # 0.20 * (8000 - 5818) + 0.36 * (8000 - 7446)
-        # = 0.20 * 2182 + 0.36 * 554
-        # = 436.40 + 199.44 = 635.84
-        result = self.calc._calculate_surtax(Decimal('8000'))
+        result = get_surtax('ON', Decimal('8000'))
         assert result == Decimal('635.84')
+
+    def test_no_surtax_for_alberta(self):
+        assert get_surtax('AB', Decimal('50000')) == Decimal('0')
 
 
 # ── Full payroll calculation ──
@@ -425,8 +417,47 @@ class TestExcelOutput:
         excel_data = create_excel_output(results, "March 2026")
         wb = load_workbook(io.BytesIO(excel_data))
         ws = wb["Payroll Summary"]
-        # Data starts at row 5, 3 employees = rows 5,6,7
         assert ws.cell(row=5, column=1).value == 'Emp 0'
         assert ws.cell(row=7, column=1).value == 'Emp 2'
-        # Total row at row 8
         assert ws.cell(row=8, column=1).value == 'TOTAL'
+
+
+# ── Province variations ──
+
+class TestProvinceVariations:
+    def test_all_provinces_load(self):
+        """All 13 provinces/territories should be available."""
+        assert len(PROVINCES) == 13
+
+    def test_different_provinces_different_tax(self):
+        """Same income in different provinces should produce different provincial tax."""
+        emp = {'name': 'Test', 'gross_pay': 5000, 'ytd_cpp': 0, 'ytd_ei': 0}
+        on_calc = PayrollCalculator(pay_periods=12, province='ON')
+        ab_calc = PayrollCalculator(pay_periods=12, province='AB')
+        bc_calc = PayrollCalculator(pay_periods=12, province='BC')
+        on_result = on_calc.calculate_payroll(emp)
+        ab_result = ab_calc.calculate_payroll(emp)
+        bc_result = bc_calc.calculate_payroll(emp)
+        # Provincial taxes should differ
+        assert on_result['provincial_tax'] != ab_result['provincial_tax']
+        assert on_result['provincial_tax'] != bc_result['provincial_tax']
+        # Federal tax should be the same
+        assert on_result['federal_tax'] == ab_result['federal_tax']
+        assert on_result['federal_tax'] == bc_result['federal_tax']
+
+    def test_alberta_higher_bpa_lower_tax(self):
+        """Alberta's high BPA ($21,003) should result in lower tax for low income."""
+        emp = {'name': 'Test', 'gross_pay': 2000, 'ytd_cpp': 0, 'ytd_ei': 0}
+        on_result = PayrollCalculator(pay_periods=12, province='ON').calculate_payroll(emp)
+        ab_result = PayrollCalculator(pay_periods=12, province='AB').calculate_payroll(emp)
+        assert ab_result['provincial_tax'] <= on_result['provincial_tax']
+
+    def test_all_provinces_produce_valid_results(self):
+        """Every province should produce a valid payroll result."""
+        emp = {'name': 'Test', 'gross_pay': 5000, 'ytd_cpp': 0, 'ytd_ei': 0}
+        for code in PROVINCES:
+            calc = PayrollCalculator(pay_periods=12, province=code)
+            result = calc.calculate_payroll(emp)
+            assert result['net_amount'] > Decimal('0'), f"{code}: net_amount should be positive"
+            assert result['net_amount'] < result['gross_pay'], f"{code}: net should be less than gross"
+            assert result['provincial_tax'] >= Decimal('0'), f"{code}: provincial_tax should be non-negative"

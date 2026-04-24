@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import requests
 
 from payroll import PayrollCalculator, CRA2026, create_excel_output
+from provinces import PROVINCE_LIST, PROVINCES
 
 # Page config
 st.set_page_config(
@@ -52,12 +54,35 @@ def main():
     st.markdown("**Automated payroll calculations matching the CRA website - Get T4-ready Excel in seconds**")
     st.markdown("---")
     
-    # Pay period (shared across both tabs)
-    pay_period = st.text_input(
-        "Pay Period",
-        value=datetime.now().strftime("%B %Y"),
-        help="e.g., January 2026"
-    )
+    # Province and pay period
+    col_prov, col_period = st.columns(2)
+
+    # Auto-detect province from IP on first load
+    if 'detected_province' not in st.session_state:
+        st.session_state.detected_province = 'ON'  # default
+        try:
+            resp = requests.get('https://ipapi.co/json/', timeout=3)
+            if resp.status_code == 200:
+                region = resp.json().get('region_code', '')
+                if region in PROVINCES:
+                    st.session_state.detected_province = region
+        except Exception:
+            pass
+
+    province_options = [f"{name}" for code, name in PROVINCE_LIST]
+    province_codes = [code for code, name in PROVINCE_LIST]
+    default_idx = province_codes.index(st.session_state.detected_province) if st.session_state.detected_province in province_codes else province_codes.index('ON')
+
+    with col_prov:
+        selected_province_name = st.selectbox("Province / Territory", options=province_options, index=default_idx)
+        selected_province = province_codes[province_options.index(selected_province_name)]
+
+    with col_period:
+        pay_period = st.text_input(
+            "Pay Period",
+            value=datetime.now().strftime("%B %Y"),
+            help="e.g., January 2026"
+        )
 
     # Input tabs
     tab_manual, tab_csv = st.tabs(["✏️ Manual Entry", "📤 Upload CSV"])
@@ -242,7 +267,7 @@ def main():
             with st.spinner("🔄 Processing payroll calculations..."):
                 results = []
                 for emp in employees:
-                    calculator = PayrollCalculator(pay_periods=emp['pay_periods'])
+                    calculator = PayrollCalculator(pay_periods=emp['pay_periods'], province=selected_province)
                     results.append(calculator.calculate_payroll(emp))
 
             st.success(f"✅ Processed {len(results)} employees successfully!")

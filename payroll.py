@@ -1,11 +1,13 @@
 """CRA 2026 payroll deduction calculator.
 
 Implements the T4127 Payroll Deductions Formulas (122nd Edition)
-for CPP, EI, federal tax, and Ontario provincial tax.
+for CPP, EI, federal tax, and provincial/territorial tax.
 """
 
 import io
 from decimal import Decimal, ROUND_HALF_UP
+
+from provinces import PROVINCES, get_surtax, get_health_premium
 
 
 class CRA2026:
@@ -18,7 +20,6 @@ class CRA2026:
     EI_EMPLOYER_MULTIPLIER = Decimal('1.4')
 
     FEDERAL_BPA = Decimal('16452.00')
-    ONTARIO_BPA = Decimal('12989.00')
 
     FEDERAL_BRACKETS = [
         (Decimal('58523'), Decimal('0.14'), Decimal('0')),
@@ -28,19 +29,13 @@ class CRA2026:
         (Decimal('999999999'), Decimal('0.33'), Decimal('61367.74'))
     ]
 
-    ONTARIO_BRACKETS = [
-        (Decimal('53359'), Decimal('0.0505'), Decimal('0')),
-        (Decimal('106717'), Decimal('0.0915'), Decimal('2187.67')),
-        (Decimal('150000'), Decimal('0.1116'), Decimal('7063.32')),
-        (Decimal('220000'), Decimal('0.1216'), Decimal('11893.30')),
-        (Decimal('999999999'), Decimal('0.1316'), Decimal('20393.30'))
-    ]
-
 
 class PayrollCalculator:
-    def __init__(self, pay_periods=12):
+    def __init__(self, pay_periods=12, province='ON'):
         self.P = Decimal(str(pay_periods))
         self.cra = CRA2026()
+        self.province_code = province
+        self.province = PROVINCES[province]
 
     def _round(self, amount):
         return Decimal(str(amount)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
@@ -61,6 +56,7 @@ class PayrollCalculator:
     def calculate_taxes(self, gross, cpp, ei):
         annual_income = Decimal(str(gross)) * self.P
 
+        # Federal tax
         for bracket_max, rate, constant in self.cra.FEDERAL_BRACKETS:
             if annual_income <= bracket_max:
                 R, K = rate, constant
@@ -75,44 +71,25 @@ class PayrollCalculator:
         T3 = max(Decimal('0'), (R * annual_income) - K - K1 - K2 - K4)
         federal_tax = self._round(T3 / self.P)
 
-        for bracket_max, rate, constant in self.cra.ONTARIO_BRACKETS:
+        # Provincial/territorial tax
+        prov = self.province
+        lowest_rate = prov['lowest_rate']
+
+        for bracket_max, rate, constant in prov['brackets']:
             if annual_income <= bracket_max:
                 V, KP = rate, constant
                 break
 
-        K1P = Decimal('0.0505') * self.cra.ONTARIO_BPA
-        K2P = Decimal('0.0505') * (cpp_credit + ei_credit)
+        K1P = lowest_rate * prov['bpa']
+        K2P = lowest_rate * (cpp_credit + ei_credit)
 
         T4 = max(Decimal('0'), (V * annual_income) - KP - K1P - K2P)
-        ohp = self._calculate_ohp(annual_income)
-        surtax = self._calculate_surtax(T4)
+        health_premium = get_health_premium(self.province_code, annual_income)
+        surtax = get_surtax(self.province_code, T4)
 
-        provincial_tax = self._round((T4 + surtax + ohp) / self.P)
+        provincial_tax = self._round((T4 + surtax + health_premium) / self.P)
 
         return federal_tax, provincial_tax
-
-    def _calculate_ohp(self, annual_income):
-        A = annual_income
-        if A <= Decimal('20000'):
-            return Decimal('0')
-        elif A <= Decimal('36000'):
-            return min(Decimal('300'), Decimal('0.06') * (A - Decimal('20000')))
-        elif A <= Decimal('48000'):
-            return min(Decimal('450'), Decimal('300') + Decimal('0.06') * (A - Decimal('36000')))
-        elif A <= Decimal('72000'):
-            return min(Decimal('600'), Decimal('450') + Decimal('0.25') * (A - Decimal('48000')))
-        elif A <= Decimal('200000'):
-            return min(Decimal('750'), Decimal('600') + Decimal('0.25') * (A - Decimal('72000')))
-        else:
-            return min(Decimal('900'), Decimal('750') + Decimal('0.25') * (A - Decimal('200000')))
-
-    def _calculate_surtax(self, T4):
-        if T4 <= Decimal('5818'):
-            return Decimal('0')
-        elif T4 <= Decimal('7446'):
-            return Decimal('0.20') * (T4 - Decimal('5818'))
-        else:
-            return Decimal('0.20') * (T4 - Decimal('5818')) + Decimal('0.36') * (T4 - Decimal('7446'))
 
     def calculate_payroll(self, employee):
         gross = Decimal(str(employee['gross_pay']))
