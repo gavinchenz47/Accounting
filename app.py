@@ -78,11 +78,16 @@ def main():
         selected_province = province_codes[province_options.index(selected_province_name)]
 
     with col_period:
-        pay_period = st.text_input(
-            "Pay Period",
-            value=datetime.now().strftime("%B %Y"),
-            help="e.g., January 2026"
-        )
+        months = ["January", "February", "March", "April", "May", "June",
+                  "July", "August", "September", "October", "November", "December"]
+        current_month = datetime.now().month - 1
+        current_year = datetime.now().year
+        col_month, col_year = st.columns(2)
+        with col_month:
+            selected_month = st.selectbox("Month", options=months, index=current_month)
+        with col_year:
+            selected_year = st.selectbox("Year", options=list(range(current_year - 1, current_year + 2)), index=1)
+        pay_period = f"{selected_month} {selected_year}"
 
     # Input tabs
     tab_manual, tab_csv = st.tabs(["✏️ Manual Entry", "📤 Upload CSV"])
